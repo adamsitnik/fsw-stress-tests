@@ -42,7 +42,7 @@ public class Scenario12_ParallelCreateDeleteCycles : IStressScenario
             });
 
             // Wait for events to be processed
-            await Task.Delay(1000);
+            await Task.Delay(3000);
 
             // Separate events by type
             List<(string EventType, string Name, string FullPath)> createEvents = 
