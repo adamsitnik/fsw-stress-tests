@@ -16,7 +16,7 @@ public class Scenario12_ParallelCreateDeleteCycles : IStressScenario
         try
         {
             System.Collections.Concurrent.ConcurrentBag<(string EventType, string Name, string FullPath)> events = new();
-            int parallelFiles = 5;
+            int parallelFiles = 100;
             int cyclesPerFile = 10;
 
             using FileSystemWatcher watcher = new(testDir)

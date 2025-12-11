@@ -15,16 +15,17 @@ public class Scenario11_ParallelWatchersAndFiles : IStressScenario
 
         try
         {
-            System.Collections.Concurrent.ConcurrentBag<(string Name, string FullPath)>[] watcherEvents = new System.Collections.Concurrent.ConcurrentBag<(string Name, string FullPath)>[3];
-            for (int i = 0; i < 3; i++)
+            int watcherCount = Environment.ProcessorCount;
+            System.Collections.Concurrent.ConcurrentBag<(string Name, string FullPath)>[] watcherEvents = new System.Collections.Concurrent.ConcurrentBag<(string Name, string FullPath)>[watcherCount];
+            for (int i = 0; i < watcherCount; i++)
             {
                 watcherEvents[i] = new();
             }
             int fileCount = 10;
 
             // Create watchers in parallel
-            FileSystemWatcher[] watchers = new FileSystemWatcher[3];
-            Parallel.For(0, 3, i =>
+            FileSystemWatcher[] watchers = new FileSystemWatcher[watcherCount];
+            Parallel.For(0, Environment.ProcessorCount, i =>
             {
                 FileSystemWatcher w = new(testDir)
                 {
@@ -53,28 +54,28 @@ public class Scenario11_ParallelWatchersAndFiles : IStressScenario
                 await Task.Delay(2000);
 
                 // All watchers should have detected the same number of events
-                for (int i = 0; i < 3; i++)
+                for (int i = 0; i < watcherCount; i++)
                 {
                     if (watcherEvents[i].Count != fileCount)
                     {
+                        string eventCounts = string.Join(", ", watcherEvents.Select((e, idx) => $"W{idx}: {e.Count}"));
                         throw new InvalidOperationException(
-                            $"All watchers should have detected exactly {fileCount} events. " +
-                            $"W0: {watcherEvents[0].Count}, W1: {watcherEvents[1].Count}, W2: {watcherEvents[2].Count}");
+                            $"All watchers should have detected exactly {fileCount} events. {eventCounts}");
                     }
                 }
 
                 // Verify all watchers saw the same files
                 HashSet<string> files0 = new(watcherEvents[0].Select(e => e.Name));
-                HashSet<string> files1 = new(watcherEvents[1].Select(e => e.Name));
-                HashSet<string> files2 = new(watcherEvents[2].Select(e => e.Name));
-
-                if (!files0.SetEquals(files1) || !files0.SetEquals(files2))
+                for (int i = 1; i < watcherCount; i++)
                 {
-                    throw new InvalidOperationException(
-                        $"Watchers detected different files. " +
-                        $"W0: {string.Join(", ", files0)}, " +
-                        $"W1: {string.Join(", ", files1)}, " +
-                        $"W2: {string.Join(", ", files2)}");
+                    HashSet<string> filesI = new(watcherEvents[i].Select(e => e.Name));
+                    if (!files0.SetEquals(filesI))
+                    {
+                        throw new InvalidOperationException(
+                            $"Watchers detected different files. " +
+                            $"W0: {string.Join(", ", files0)}, " +
+                            $"W{i}: {string.Join(", ", filesI)}");
+                    }
                 }
 
                 // Verify paths match
