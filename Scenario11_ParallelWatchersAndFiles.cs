@@ -25,7 +25,7 @@ public class Scenario11_ParallelWatchersAndFiles : IStressScenario
 
             // Create watchers in parallel
             FileSystemWatcher[] watchers = new FileSystemWatcher[watcherCount];
-            Parallel.For(0, Environment.ProcessorCount, i =>
+            Parallel.For(0, watcherCount, i =>
             {
                 FileSystemWatcher w = new(testDir)
                 {
