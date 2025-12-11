@@ -38,7 +38,7 @@ public class Scenario03_DirectoryCreation : IStressScenario
             Directory.CreateDirectory(expectedSubDir);
 
             // Wait for event
-            Task timeoutTask = Task.Delay(5000);
+            Task timeoutTask = Task.Delay(1000);
             Task completedTask = await Task.WhenAny(tcs.Task, timeoutTask);
 
             if (completedTask == timeoutTask)
@@ -55,15 +55,10 @@ public class Scenario03_DirectoryCreation : IStressScenario
             }
 
             (string name, string fullPath) = createdEvents[0];
-            if (name != "subdir")
-            {
-                throw new InvalidOperationException($"Expected directory name 'subdir', but got '{name}'");
-            }
-
-            if (fullPath != expectedSubDir)
+            if (name != "subdir" || fullPath != expectedSubDir)
             {
                 throw new InvalidOperationException(
-                    $"Expected full path '{expectedSubDir}', but got '{fullPath}'");
+                    $"Expected directory 'subdir' at '{expectedSubDir}', but got '{name}' at '{fullPath}'");
             }
         }
         finally

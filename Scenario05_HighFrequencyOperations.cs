@@ -15,7 +15,7 @@ public class Scenario05_HighFrequencyOperations : IStressScenario
 
         try
         {
-            List<(string Name, string FullPath)> createdEvents = new();
+            System.Collections.Concurrent.ConcurrentBag<(string Name, string FullPath)> createdEvents = new();
             int fileCount = 50;
 
             using FileSystemWatcher watcher = new(testDir)
@@ -26,10 +26,7 @@ public class Scenario05_HighFrequencyOperations : IStressScenario
 
             watcher.Created += (sender, e) =>
             {
-                lock (createdEvents)
-                {
-                    createdEvents.Add((e.Name!, e.FullPath));
-                }
+                createdEvents.Add((e.Name!, e.FullPath));
             };
 
             // Create many files rapidly and track expected paths
