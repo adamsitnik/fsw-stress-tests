@@ -23,7 +23,10 @@ class Program
             new Scenario09_RapidCreateDeleteCycles(),
             new Scenario10_NestedDirectoryOperations(),
             new Scenario11_ParallelWatchersAndFiles(),
-            new Scenario12_ParallelCreateDeleteCycles()
+            new Scenario12_ParallelCreateDeleteCycles(),
+            new Scenario13_RapidWatcherStartStopWithProducer(),
+            new Scenario14_AggressiveWatcherLifecycle(),
+            new Scenario15_GlobalWatcherContention()
         };
 
         List<(string ScenarioName, Exception Error, TimeSpan Duration)> failures = new();
