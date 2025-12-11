@@ -15,9 +15,11 @@ public class Scenario11_ParallelWatchersAndFiles : IStressScenario
 
         try
         {
-            System.Collections.Concurrent.ConcurrentBag<(string Name, string FullPath)> watcher1Events = new();
-            System.Collections.Concurrent.ConcurrentBag<(string Name, string FullPath)> watcher2Events = new();
-            System.Collections.Concurrent.ConcurrentBag<(string Name, string FullPath)> watcher3Events = new();
+            System.Collections.Concurrent.ConcurrentBag<(string Name, string FullPath)>[] watcherEvents = new System.Collections.Concurrent.ConcurrentBag<(string Name, string FullPath)>[3];
+            for (int i = 0; i < 3; i++)
+            {
+                watcherEvents[i] = new();
+            }
             int fileCount = 10;
 
             // Create watchers in parallel
@@ -30,12 +32,8 @@ public class Scenario11_ParallelWatchersAndFiles : IStressScenario
                     EnableRaisingEvents = true
                 };
                 
-                if (i == 0)
-                    w.Created += (s, e) => watcher1Events.Add((e.Name!, e.FullPath));
-                else if (i == 1)
-                    w.Created += (s, e) => watcher2Events.Add((e.Name!, e.FullPath));
-                else
-                    w.Created += (s, e) => watcher3Events.Add((e.Name!, e.FullPath));
+                int index = i; // Capture for lambda
+                w.Created += (s, e) => watcherEvents[index].Add((e.Name!, e.FullPath));
                 
                 watchers[i] = w;
             });
@@ -55,29 +53,32 @@ public class Scenario11_ParallelWatchersAndFiles : IStressScenario
                 await Task.Delay(2000);
 
                 // All watchers should have detected the same number of events
-                if (watcher1Events.Count != fileCount || watcher2Events.Count != fileCount || watcher3Events.Count != fileCount)
+                for (int i = 0; i < 3; i++)
                 {
-                    throw new InvalidOperationException(
-                        $"All watchers should have detected exactly {fileCount} events. " +
-                        $"W1: {watcher1Events.Count}, W2: {watcher2Events.Count}, W3: {watcher3Events.Count}");
+                    if (watcherEvents[i].Count != fileCount)
+                    {
+                        throw new InvalidOperationException(
+                            $"All watchers should have detected exactly {fileCount} events. " +
+                            $"W0: {watcherEvents[0].Count}, W1: {watcherEvents[1].Count}, W2: {watcherEvents[2].Count}");
+                    }
                 }
 
                 // Verify all watchers saw the same files
-                HashSet<string> files1 = new(watcher1Events.Select(e => e.Name));
-                HashSet<string> files2 = new(watcher2Events.Select(e => e.Name));
-                HashSet<string> files3 = new(watcher3Events.Select(e => e.Name));
+                HashSet<string> files0 = new(watcherEvents[0].Select(e => e.Name));
+                HashSet<string> files1 = new(watcherEvents[1].Select(e => e.Name));
+                HashSet<string> files2 = new(watcherEvents[2].Select(e => e.Name));
 
-                if (!files1.SetEquals(files2) || !files1.SetEquals(files3))
+                if (!files0.SetEquals(files1) || !files0.SetEquals(files2))
                 {
                     throw new InvalidOperationException(
                         $"Watchers detected different files. " +
+                        $"W0: {string.Join(", ", files0)}, " +
                         $"W1: {string.Join(", ", files1)}, " +
-                        $"W2: {string.Join(", ", files2)}, " +
-                        $"W3: {string.Join(", ", files3)}");
+                        $"W2: {string.Join(", ", files2)}");
                 }
 
                 // Verify paths match
-                foreach ((string name, string fullPath) in watcher1Events)
+                foreach ((string name, string fullPath) in watcherEvents[0])
                 {
                     string expectedPath = Path.Combine(testDir, name);
                     if (fullPath != expectedPath)

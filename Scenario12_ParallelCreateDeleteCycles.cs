@@ -35,9 +35,9 @@ public class Scenario12_ParallelCreateDeleteCycles : IStressScenario
                 for (int cycle = 0; cycle < cyclesPerFile; cycle++)
                 {
                     File.WriteAllText(filePath, $"File {fileIndex}, Cycle {cycle}");
-                    Thread.Sleep(50);
+                    Thread.Sleep(50); // Brief delay to allow FSW to process events
                     File.Delete(filePath);
-                    Thread.Sleep(50);
+                    Thread.Sleep(50); // Brief delay to allow FSW to process events
                 }
             });
 
