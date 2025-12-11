@@ -10,28 +10,28 @@ public class Scenario07_ConcurrentWatchers : IStressScenario
 
     public async Task RunAsync()
     {
-        var testDir = Path.Combine(Path.GetTempPath(), $"fsw_test_{Guid.NewGuid()}");
+        string testDir = Path.Combine(Path.GetTempPath(), $"fsw_test_concurrent_watchers_{Guid.NewGuid()}");
         Directory.CreateDirectory(testDir);
 
         try
         {
-            var watcher1Events = 0;
-            var watcher2Events = 0;
-            var watcher3Events = 0;
+            int watcher1Events = 0;
+            int watcher2Events = 0;
+            int watcher3Events = 0;
 
-            using var watcher1 = new FileSystemWatcher(testDir)
+            using FileSystemWatcher watcher1 = new(testDir)
             {
                 NotifyFilter = NotifyFilters.FileName,
                 EnableRaisingEvents = true
             };
 
-            using var watcher2 = new FileSystemWatcher(testDir)
+            using FileSystemWatcher watcher2 = new(testDir)
             {
                 NotifyFilter = NotifyFilters.FileName,
                 EnableRaisingEvents = true
             };
 
-            using var watcher3 = new FileSystemWatcher(testDir)
+            using FileSystemWatcher watcher3 = new(testDir)
             {
                 NotifyFilter = NotifyFilters.FileName,
                 EnableRaisingEvents = true
@@ -41,22 +41,23 @@ public class Scenario07_ConcurrentWatchers : IStressScenario
             watcher2.Created += (s, e) => Interlocked.Increment(ref watcher2Events);
             watcher3.Created += (s, e) => Interlocked.Increment(ref watcher3Events);
 
+            int fileCount = 5;
             // Create test files
-            for (int i = 0; i < 5; i++)
+            for (int i = 0; i < fileCount; i++)
             {
-                var filePath = Path.Combine(testDir, $"test_{i}.txt");
+                string filePath = Path.Combine(testDir, $"test_{i}.txt");
                 await File.WriteAllTextAsync(filePath, $"Content {i}");
-                await Task.Delay(100);
             }
 
             // Wait for events to be processed
             await Task.Delay(1000);
 
-            // All watchers should have detected events
-            if (watcher1Events == 0 || watcher2Events == 0 || watcher3Events == 0)
+            // All watchers should have detected the same number of events
+            if (watcher1Events != fileCount || watcher2Events != fileCount || watcher3Events != fileCount)
             {
                 throw new InvalidOperationException(
-                    $"Not all watchers detected events. W1: {watcher1Events}, W2: {watcher2Events}, W3: {watcher3Events}");
+                    $"All watchers should have detected exactly {fileCount} events. " +
+                    $"W1: {watcher1Events}, W2: {watcher2Events}, W3: {watcher3Events}");
             }
         }
         finally

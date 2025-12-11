@@ -10,16 +10,16 @@ public class Scenario09_RapidCreateDeleteCycles : IStressScenario
 
     public async Task RunAsync()
     {
-        var testDir = Path.Combine(Path.GetTempPath(), $"fsw_test_{Guid.NewGuid()}");
+        string testDir = Path.Combine(Path.GetTempPath(), $"fsw_test_rapid_create_delete_cycles_{Guid.NewGuid()}");
         Directory.CreateDirectory(testDir);
 
         try
         {
-            var createCount = 0;
-            var deleteCount = 0;
-            var cycles = 20;
+            int createCount = 0;
+            int deleteCount = 0;
+            int cycles = 20;
 
-            using var watcher = new FileSystemWatcher(testDir)
+            using FileSystemWatcher watcher = new(testDir)
             {
                 NotifyFilter = NotifyFilters.FileName,
                 EnableRaisingEvents = true
@@ -28,7 +28,7 @@ public class Scenario09_RapidCreateDeleteCycles : IStressScenario
             watcher.Created += (s, e) => Interlocked.Increment(ref createCount);
             watcher.Deleted += (s, e) => Interlocked.Increment(ref deleteCount);
 
-            var filePath = Path.Combine(testDir, "cycle.txt");
+            string filePath = Path.Combine(testDir, "cycle.txt");
 
             // Rapid create/delete cycles
             for (int i = 0; i < cycles; i++)

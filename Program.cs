@@ -10,7 +10,7 @@ class Program
         Console.WriteLine($"Started at: {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
         Console.WriteLine();
 
-        var scenarios = new List<IStressScenario>
+        List<IStressScenario> scenarios = new()
         {
             new Scenario01_BasicFileCreation(),
             new Scenario02_MultipleFileOperations(),
@@ -21,18 +21,20 @@ class Program
             new Scenario07_ConcurrentWatchers(),
             new Scenario08_RenameOperations(),
             new Scenario09_RapidCreateDeleteCycles(),
-            new Scenario10_NestedDirectoryOperations()
+            new Scenario10_NestedDirectoryOperations(),
+            new Scenario11_ParallelWatchersAndFiles(),
+            new Scenario12_ParallelCreateDeleteCycles()
         };
 
-        var failures = new List<(string ScenarioName, Exception Error, TimeSpan Duration)>();
-        var totalStopwatch = Stopwatch.StartNew();
+        List<(string ScenarioName, Exception Error, TimeSpan Duration)> failures = new();
+        Stopwatch totalStopwatch = Stopwatch.StartNew();
 
         for (int i = 0; i < scenarios.Count; i++)
         {
-            var scenario = scenarios[i];
+            IStressScenario scenario = scenarios[i];
             Console.WriteLine($"[{i + 1}/{scenarios.Count}] Running: {scenario.Name}");
             
-            var stopwatch = Stopwatch.StartNew();
+            Stopwatch stopwatch = Stopwatch.StartNew();
             try
             {
                 await scenario.RunAsync();
@@ -69,10 +71,13 @@ class Program
                 Console.WriteLine($"  Error: {error.GetType().Name}: {error.Message}");
                 if (error.StackTrace != null)
                 {
-                    var lines = error.StackTrace.Split('\n').Take(3);
-                    foreach (var line in lines)
+                    Console.WriteLine($"  Stack Trace:");
+                    foreach (string line in error.StackTrace.Split('\n'))
                     {
-                        Console.WriteLine($"  {line.Trim()}");
+                        if (!string.IsNullOrWhiteSpace(line))
+                        {
+                            Console.WriteLine($"    {line.Trim()}");
+                        }
                     }
                 }
                 Console.WriteLine();
