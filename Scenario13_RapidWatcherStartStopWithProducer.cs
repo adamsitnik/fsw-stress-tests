@@ -1,3 +1,5 @@
+using System.Collections.Concurrent;
+
 namespace FswStressTests;
 
 /// <summary>
@@ -23,12 +25,16 @@ public class Scenario13_RapidWatcherStartStopWithProducer : IStressScenario
             int watchersPerThread = 10;
             int operationDurationSeconds = 10;
 
-            System.Collections.Concurrent.ConcurrentBag<Exception> exceptions = new();
+            ConcurrentBag<Exception> exceptions = new();
             CancellationTokenSource cts = new();
+            ManualResetEventSlim producerGate = new(false);
 
             // Producer thread: continuously creates files
             Task producerTask = Task.Run(async () =>
             {
+                // Wait for first consumer to be ready
+                producerGate.Wait();
+                
                 int fileCounter = 0;
                 try
                 {
@@ -65,51 +71,49 @@ public class Scenario13_RapidWatcherStartStopWithProducer : IStressScenario
             });
 
             // Consumer threads: rapidly start and stop watchers
-            List<Task> consumerTasks = new();
-            for (int i = 0; i < threadCount; i++)
+            DateTime endTime = DateTime.UtcNow.AddSeconds(operationDurationSeconds);
+            int firstConsumer = 0;
+            
+            Parallel.For(0, threadCount, i =>
             {
-                int threadId = i;
-                Task consumerTask = Task.Run(() =>
+                try
                 {
-                    try
+                    // First consumer signals producer to start
+                    if (Interlocked.CompareExchange(ref firstConsumer, 1, 0) == 0)
                     {
-                        DateTime endTime = DateTime.UtcNow.AddSeconds(operationDurationSeconds);
-                        
-                        while (DateTime.UtcNow < endTime)
+                        producerGate.Set();
+                    }
+                    
+                    while (DateTime.UtcNow < endTime)
+                    {
+                        // Create and dispose 10 watchers in rapid succession
+                        for (int j = 0; j < watchersPerThread; j++)
                         {
-                            // Create and dispose 10 watchers in rapid succession
-                            for (int j = 0; j < watchersPerThread; j++)
+                            FileSystemWatcher watcher = new(testDir)
                             {
-                                FileSystemWatcher watcher = new(testDir)
-                                {
-                                    NotifyFilter = NotifyFilters.FileName | NotifyFilters.LastWrite,
-                                    IncludeSubdirectories = false,
-                                    EnableRaisingEvents = true
-                                };
+                                NotifyFilter = NotifyFilters.FileName | NotifyFilters.LastWrite,
+                                IncludeSubdirectories = false,
+                                EnableRaisingEvents = true
+                            };
 
-                                // Set up event handlers to catch any exceptions
-                                watcher.Created += (s, e) => { /* Event received */ };
-                                watcher.Changed += (s, e) => { /* Event received */ };
-                                watcher.Deleted += (s, e) => { /* Event received */ };
-                                watcher.Error += (s, e) => exceptions.Add(e.GetException());
+                            // Set up event handlers to catch any exceptions
+                            watcher.Created += (s, e) => { /* Event received */ };
+                            watcher.Changed += (s, e) => { /* Event received */ };
+                            watcher.Deleted += (s, e) => { /* Event received */ };
+                            watcher.Error += (s, e) => exceptions.Add(e.GetException());
 
-                                // Immediately dispose without delay
-                                watcher.Dispose();
-                            }
-                            
-                            // No delay between iterations to maximize stress
+                            // Immediately dispose without delay
+                            watcher.Dispose();
                         }
+                        
+                        // No delay between iterations to maximize stress
                     }
-                    catch (Exception ex)
-                    {
-                        exceptions.Add(ex);
-                    }
-                });
-                consumerTasks.Add(consumerTask);
-            }
-
-            // Wait for all consumer threads to complete
-            await Task.WhenAll(consumerTasks);
+                }
+                catch (Exception ex)
+                {
+                    exceptions.Add(ex);
+                }
+            });
 
             // Signal producer to stop
             cts.Cancel();
@@ -121,6 +125,8 @@ public class Scenario13_RapidWatcherStartStopWithProducer : IStressScenario
             {
                 // Expected
             }
+            
+            producerGate.Dispose();
 
             // Check for exceptions
             if (exceptions.Count > 0)

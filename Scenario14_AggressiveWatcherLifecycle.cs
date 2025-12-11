@@ -1,3 +1,5 @@
+using System.Collections.Concurrent;
+
 namespace FswStressTests;
 
 /// <summary>
@@ -21,8 +23,8 @@ public class Scenario14_AggressiveWatcherLifecycle : IStressScenario
         {
             int threadCount = Environment.ProcessorCount;
             int iterationsPerThread = 50;
-            System.Collections.Concurrent.ConcurrentBag<Exception> exceptions = new();
-            System.Collections.Concurrent.ConcurrentBag<string> receivedEvents = new();
+            ConcurrentBag<Exception> exceptions = new();
+            ConcurrentBag<string> receivedEvents = new();
             
             // Create initial files to trigger events
             for (int i = 0; i < 5; i++)
@@ -33,8 +35,13 @@ public class Scenario14_AggressiveWatcherLifecycle : IStressScenario
 
             // Background task: continuous file modifications
             CancellationTokenSource cts = new();
+            ManualResetEventSlim producerGate = new(false);
+            
             Task backgroundTask = Task.Run(async () =>
             {
+                // Wait for first consumer to be ready
+                producerGate.Wait();
+                
                 int counter = 0;
                 try
                 {
@@ -56,69 +63,68 @@ public class Scenario14_AggressiveWatcherLifecycle : IStressScenario
             });
 
             // Multiple threads aggressively creating/disposing watchers
-            List<Task> watcherTasks = new();
-            for (int i = 0; i < threadCount; i++)
+            int firstConsumer = 0;
+            
+            Parallel.For(0, threadCount, i =>
             {
-                int threadId = i;
-                Task watcherTask = Task.Run(() =>
+                try
                 {
-                    try
+                    // First consumer signals producer to start
+                    if (Interlocked.CompareExchange(ref firstConsumer, 1, 0) == 0)
                     {
-                        for (int iteration = 0; iteration < iterationsPerThread; iteration++)
+                        producerGate.Set();
+                    }
+                    
+                    for (int iteration = 0; iteration < iterationsPerThread; iteration++)
+                    {
+                        // Create watcher
+                        FileSystemWatcher watcher = new(testDir)
                         {
-                            // Create watcher
-                            FileSystemWatcher watcher = new(testDir)
-                            {
-                                NotifyFilter = NotifyFilters.FileName | NotifyFilters.LastWrite | NotifyFilters.DirectoryName,
-                                IncludeSubdirectories = false
-                            };
+                            NotifyFilter = NotifyFilters.FileName | NotifyFilters.LastWrite | NotifyFilters.DirectoryName,
+                            IncludeSubdirectories = false
+                        };
 
-                            // Set up comprehensive event handlers
-                            watcher.Created += (s, e) => receivedEvents.Add($"T{threadId}-I{iteration}: Created {e.Name}");
-                            watcher.Changed += (s, e) => receivedEvents.Add($"T{threadId}-I{iteration}: Changed {e.Name}");
-                            watcher.Deleted += (s, e) => receivedEvents.Add($"T{threadId}-I{iteration}: Deleted {e.Name}");
-                            watcher.Renamed += (s, e) => receivedEvents.Add($"T{threadId}-I{iteration}: Renamed {e.OldName} to {e.Name}");
-                            watcher.Error += (s, e) => exceptions.Add(e.GetException());
+                        // Set up comprehensive event handlers
+                        watcher.Created += (s, e) => receivedEvents.Add($"T{i}-I{iteration}: Created {e.Name}");
+                        watcher.Changed += (s, e) => receivedEvents.Add($"T{i}-I{iteration}: Changed {e.Name}");
+                        watcher.Deleted += (s, e) => receivedEvents.Add($"T{i}-I{iteration}: Deleted {e.Name}");
+                        watcher.Renamed += (s, e) => receivedEvents.Add($"T{i}-I{iteration}: Renamed {e.OldName} to {e.Name}");
+                        watcher.Error += (s, e) => exceptions.Add(e.GetException());
 
-                            // Enable and immediately create a file to potentially trigger events
-                            watcher.EnableRaisingEvents = true;
-                            
-                            string testFile = Path.Combine(testDir, $"test_t{threadId}_i{iteration}.txt");
-                            File.WriteAllText(testFile, $"Thread {threadId} Iteration {iteration}");
-                            
-                            // Modify the file while watcher is active
-                            File.AppendAllText(testFile, " - Modified");
-                            
-                            // Brief moment for events to potentially be queued
-                            // This is intentional to test the edge case of disposal while events are in flight
-                            Thread.Sleep(5);
-                            
-                            // Dispose while events might still be in flight
-                            watcher.Dispose();
-                            
-                            // Clean up test file
-                            try
-                            {
-                                File.Delete(testFile);
-                            }
-                            catch (FileNotFoundException)
-                            {
-                                // Race condition, acceptable
-                            }
-
-                            // No delay between iterations to stress lifecycle transitions
+                        // Enable and immediately create a file to potentially trigger events
+                        watcher.EnableRaisingEvents = true;
+                        
+                        string testFile = Path.Combine(testDir, $"test_t{i}_i{iteration}.txt");
+                        File.WriteAllText(testFile, $"Thread {i} Iteration {iteration}");
+                        
+                        // Modify the file while watcher is active
+                        File.AppendAllText(testFile, " - Modified");
+                        
+                        // Brief moment for events to potentially be queued
+                        // This is intentional to test the edge case of disposal while events are in flight
+                        Thread.Sleep(5);
+                        
+                        // Dispose while events might still be in flight
+                        watcher.Dispose();
+                        
+                        // Clean up test file
+                        try
+                        {
+                            File.Delete(testFile);
                         }
-                    }
-                    catch (Exception ex)
-                    {
-                        exceptions.Add(ex);
-                    }
-                });
-                watcherTasks.Add(watcherTask);
-            }
+                        catch (FileNotFoundException)
+                        {
+                            // Race condition, acceptable
+                        }
 
-            // Wait for all watcher threads
-            await Task.WhenAll(watcherTasks);
+                        // No delay between iterations to stress lifecycle transitions
+                    }
+                }
+                catch (Exception ex)
+                {
+                    exceptions.Add(ex);
+                }
+            });
 
             // Stop background task
             cts.Cancel();
@@ -130,6 +136,8 @@ public class Scenario14_AggressiveWatcherLifecycle : IStressScenario
             {
                 // Expected
             }
+            
+            producerGate.Dispose();
 
             // Wait a bit for any pending events
             await Task.Delay(500);

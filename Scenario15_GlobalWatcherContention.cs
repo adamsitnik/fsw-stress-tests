@@ -1,3 +1,5 @@
+using System.Collections.Concurrent;
+
 namespace FswStressTests;
 
 /// <summary>
@@ -23,15 +25,19 @@ public class Scenario15_GlobalWatcherContention : IStressScenario
             int maxThreads = Environment.ProcessorCount * 2; // Oversubscribe for maximum contention
             int operationDurationSeconds = 8;
             
-            System.Collections.Concurrent.ConcurrentBag<Exception> exceptions = new();
-            System.Collections.Concurrent.ConcurrentDictionary<int, int> eventCountsByWatcher = new();
+            ConcurrentBag<Exception> exceptions = new();
+            ConcurrentDictionary<int, int> eventCountsByWatcher = new();
             CancellationTokenSource cts = new();
+            ManualResetEventSlim producerGate = new(false);
             
             int watcherIdCounter = 0;
 
             // High-frequency file producer
             Task producerTask = Task.Run(async () =>
             {
+                // Wait for first consumer to be ready
+                producerGate.Wait();
+                
                 int fileCounter = 0;
                 try
                 {
@@ -69,73 +75,71 @@ public class Scenario15_GlobalWatcherContention : IStressScenario
             });
 
             // Multiple threads continuously creating and destroying watchers
-            List<Task> watcherThreads = new();
-            for (int t = 0; t < maxThreads; t++)
+            DateTime endTime = DateTime.UtcNow.AddSeconds(operationDurationSeconds);
+            int firstConsumer = 0;
+            
+            Parallel.For(0, maxThreads, t =>
             {
-                int threadIndex = t;
-                Task watcherThread = Task.Run(() =>
+                try
                 {
-                    try
+                    // First consumer signals producer to start
+                    if (Interlocked.CompareExchange(ref firstConsumer, 1, 0) == 0)
                     {
-                        DateTime endTime = DateTime.UtcNow.AddSeconds(operationDurationSeconds);
+                        producerGate.Set();
+                    }
+                    
+                    while (DateTime.UtcNow < endTime)
+                    {
+                        int watcherId = Interlocked.Increment(ref watcherIdCounter);
                         
-                        while (DateTime.UtcNow < endTime)
+                        // Create watcher with varying configurations to stress the global watcher
+                        NotifyFilters filter = (watcherId % 3) switch
                         {
-                            int watcherId = Interlocked.Increment(ref watcherIdCounter);
-                            
-                            // Create watcher with varying configurations to stress the global watcher
-                            NotifyFilters filter = (watcherId % 3) switch
-                            {
-                                0 => NotifyFilters.FileName,
-                                1 => NotifyFilters.LastWrite,
-                                _ => NotifyFilters.FileName | NotifyFilters.LastWrite
-                            };
+                            0 => NotifyFilters.FileName,
+                            1 => NotifyFilters.LastWrite,
+                            _ => NotifyFilters.FileName | NotifyFilters.LastWrite
+                        };
 
-                            FileSystemWatcher watcher = new(testDir)
-                            {
-                                NotifyFilter = filter,
-                                IncludeSubdirectories = false,
-                                EnableRaisingEvents = true
-                            };
+                        FileSystemWatcher watcher = new(testDir)
+                        {
+                            NotifyFilter = filter,
+                            IncludeSubdirectories = false,
+                            EnableRaisingEvents = true
+                        };
 
-                            // Track events per watcher
-                            int localWatcherId = watcherId;
-                            eventCountsByWatcher[localWatcherId] = 0;
+                        // Track events per watcher
+                        int localWatcherId = watcherId;
+                        eventCountsByWatcher[localWatcherId] = 0;
 
-                            watcher.Created += (s, e) => 
-                            {
-                                eventCountsByWatcher.AddOrUpdate(localWatcherId, 1, (k, v) => v + 1);
-                            };
-                            watcher.Changed += (s, e) => 
-                            {
-                                eventCountsByWatcher.AddOrUpdate(localWatcherId, 1, (k, v) => v + 1);
-                            };
-                            watcher.Deleted += (s, e) => 
-                            {
-                                eventCountsByWatcher.AddOrUpdate(localWatcherId, 1, (k, v) => v + 1);
-                            };
-                            watcher.Error += (s, e) => exceptions.Add(e.GetException());
+                        watcher.Created += (s, e) => 
+                        {
+                            eventCountsByWatcher.AddOrUpdate(localWatcherId, 1, (k, v) => v + 1);
+                        };
+                        watcher.Changed += (s, e) => 
+                        {
+                            eventCountsByWatcher.AddOrUpdate(localWatcherId, 1, (k, v) => v + 1);
+                        };
+                        watcher.Deleted += (s, e) => 
+                        {
+                            eventCountsByWatcher.AddOrUpdate(localWatcherId, 1, (k, v) => v + 1);
+                        };
+                        watcher.Error += (s, e) => exceptions.Add(e.GetException());
 
-                            // Let it run briefly to collect some events before disposal
-                            // This tests that the global watcher correctly delivers events to short-lived watchers
-                            Thread.Sleep(50);
-                            
-                            // Dispose - this removes the watch from the global watcher
-                            watcher.Dispose();
-                            
-                            // Immediately continue to next iteration - maximum churn
-                        }
+                        // Let it run briefly to collect some events before disposal
+                        // This tests that the global watcher correctly delivers events to short-lived watchers
+                        Thread.Sleep(50);
+                        
+                        // Dispose - this removes the watch from the global watcher
+                        watcher.Dispose();
+                        
+                        // Immediately continue to next iteration - maximum churn
                     }
-                    catch (Exception ex)
-                    {
-                        exceptions.Add(ex);
-                    }
-                });
-                watcherThreads.Add(watcherThread);
-            }
-
-            // Wait for all watcher threads
-            await Task.WhenAll(watcherThreads);
+                }
+                catch (Exception ex)
+                {
+                    exceptions.Add(ex);
+                }
+            });
 
             // Stop producer
             cts.Cancel();
@@ -147,6 +151,8 @@ public class Scenario15_GlobalWatcherContention : IStressScenario
             {
                 // Expected
             }
+            
+            producerGate.Dispose();
 
             // Brief delay for final event processing
             await Task.Delay(500);
