@@ -35,7 +35,7 @@ public class Scenario06_LargeFileMonitoring : IStressScenario
 
             // Create a large file (10 MB)
             string expectedFilePath = Path.Combine(testDir, "large.dat");
-            byte[] data = new byte[10 * 1024 * 1024]; // 10 MB
+            byte[] data = new byte[10 * 1024 * 1024]; // 10 MB of zeros (content doesn't matter for FSW testing)
             await File.WriteAllBytesAsync(expectedFilePath, data);
 
             // Wait for event

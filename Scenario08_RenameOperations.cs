@@ -26,7 +26,8 @@ public class Scenario08_RenameOperations : IStressScenario
 
             watcher.Renamed += (sender, e) =>
             {
-                renamedEvents.Add((e.OldName!, e.Name!, ((System.IO.RenamedEventArgs)e).OldFullPath, e.FullPath));
+                RenamedEventArgs args = (RenamedEventArgs)e;
+                renamedEvents.Add((args.OldName!, args.Name!, args.OldFullPath, args.FullPath));
                 if (renamedEvents.Count >= 2)
                 {
                     tcs.TrySetResult(true);

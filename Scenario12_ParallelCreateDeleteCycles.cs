@@ -52,6 +52,7 @@ public class Scenario12_ParallelCreateDeleteCycles : IStressScenario
             // Wait for events to be processed
             await Task.Delay(1000);
 
+            // We expect at least half the events due to potential event coalescing in parallel scenarios
             int expectedMinEvents = parallelFiles * cyclesPerFile / 2;
 
             // We should have detected at least some create and delete events
