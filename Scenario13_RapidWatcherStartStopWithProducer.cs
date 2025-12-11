@@ -3,8 +3,8 @@ namespace FswStressTests;
 /// <summary>
 /// Scenario 13: Rapid watcher start/stop cycles with concurrent file operations
 /// Tests the global watcher mechanism under extreme stress:
-/// - (CPU-1) threads each starting and stopping 10 different watchers for the same directory
-/// - No delays between operations to maximize stress on the global watcher
+/// - Max(1, CPU-1) threads each starting and stopping 10 different watchers for the same directory
+/// - No delays between watcher create/dispose operations to maximize stress on the global watcher
 /// - One producer thread continuously creating file changes
 /// - Verifies no exceptions are thrown by FileSystemWatcher
 /// </summary>

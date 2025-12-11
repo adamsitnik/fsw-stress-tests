@@ -116,7 +116,8 @@ public class Scenario15_GlobalWatcherContention : IStressScenario
                             };
                             watcher.Error += (s, e) => exceptions.Add(e.GetException());
 
-                            // Let it run briefly to collect some events
+                            // Let it run briefly to collect some events before disposal
+                            // This tests that the global watcher correctly delivers events to short-lived watchers
                             Thread.Sleep(50);
                             
                             // Dispose - this removes the watch from the global watcher

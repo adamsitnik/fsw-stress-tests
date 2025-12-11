@@ -90,6 +90,7 @@ public class Scenario14_AggressiveWatcherLifecycle : IStressScenario
                             File.AppendAllText(testFile, " - Modified");
                             
                             // Brief moment for events to potentially be queued
+                            // This is intentional to test the edge case of disposal while events are in flight
                             Thread.Sleep(5);
                             
                             // Dispose while events might still be in flight
